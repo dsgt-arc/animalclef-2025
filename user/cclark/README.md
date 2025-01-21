@@ -2,7 +2,7 @@
 
 **User:** Charlie Clark \
 **Semester:** Spring 2025 \
-**Email:** cclark339@gatech.edu \
+**Email:** cclark339@gatech.edu 
 
 ## Work Done
 
