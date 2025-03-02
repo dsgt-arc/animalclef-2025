@@ -13,7 +13,8 @@ dependencies = [
     "imageio",
     "tqdm",
     "pyspark >= 3.4.0",
-    "pyarrow"
+    "pyarrow",
+    "transformers",
 ]
 
 [project.optional-dependencies]
