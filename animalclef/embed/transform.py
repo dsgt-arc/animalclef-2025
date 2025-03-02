@@ -1,11 +1,26 @@
+from functools import cache
+
 import numpy as np
+import torch
+
 from pyspark.ml import Transformer
 from pyspark.ml.functions import predict_batch_udf
 from pyspark.sql import DataFrame
-from pyspark.sql.types import ArrayType, FloatType
+from pyspark.sql.types import ArrayType, FloatType, StructField, StructType
 
 from animalclef.params import HasModelParamsMixin
 from animalclef.serde import deserialize_image
+
+
+@cache
+def get_dino_processor_and_model(model_name: str) -> tuple:
+    """Return processor and model."""
+    from transformers import AutoImageProcessor, AutoModel
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    processor = AutoImageProcessor.from_pretrained(model_name, use_fast=True)
+    model = AutoModel.from_pretrained(model_name).to(device)
+    return processor, model
 
 
 class WrappedDino(Transformer, HasModelParamsMixin):
@@ -38,27 +53,28 @@ class WrappedDino(Transformer, HasModelParamsMixin):
 
     def _make_predict_fn(self):
         """Return PredictBatchFunction using a closure over the model"""
-        import torch
-        from transformers import AutoFeatureExtractor, AutoModel
 
         # check on the nvidia stats when generating the predict function
         self._nvidia_smi()
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        processor = AutoFeatureExtractor.from_pretrained(self.getModelName())
-        model = AutoModel.from_pretrained(self.getModelName()).to(device)
+        processor, model = get_dino_processor_and_model(self.getModelName())
 
         def predict(inputs: np.ndarray) -> np.ndarray:
-            images = processor(
-                images=[deserialize_image(img) for img in inputs],
-                return_tensors="pt",
-            ).pixel_values
-
             # extract [CLS] token embeddings
             with torch.no_grad():
-                features = model.forward_features(torch.stack(images))
+                outputs = model(
+                    **processor(
+                        images=[deserialize_image(img) for img in inputs],
+                        return_tensors="pt",
+                    )
+                )
+                features = outputs.last_hidden_state
                 cls_token = features[:, 0, :]
+                avg_patch_token = features[:, 1:, :].mean(dim=1)
 
-            return cls_token.cpu().numpy()
+            return {
+                "cls": cls_token.cpu().numpy(),
+                "avg_patch": avg_patch_token.cpu().numpy(),
+            }
 
         return predict
 
@@ -67,7 +83,12 @@ class WrappedDino(Transformer, HasModelParamsMixin):
             self.getOutputCol(),
             predict_batch_udf(
                 make_predict_fn=self._make_predict_fn,
-                return_type=ArrayType(FloatType()),
+                return_type=StructType(
+                    [
+                        StructField("cls", ArrayType(FloatType())),
+                        StructField("avg_patch", ArrayType(FloatType())),
+                    ]
+                ),
                 batch_size=self.getBatchSize(),
             )(self.getInputCol()),
         )
