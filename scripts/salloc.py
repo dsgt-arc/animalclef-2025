@@ -20,6 +20,12 @@ parser.add_argument(
     help="Print the command without executing it.",
     default=True,
 )
+parser.add_argument(
+    "--qos",
+    type=str,
+    default="embers",
+    choices=["inferno", "embers"],
+)
 args = parser.parse_args()
 
 # salloc -A paceship-dsgt_clef2025 -N1 -n1 -c2 --mem-per-cpu=4G -t1:00:00
