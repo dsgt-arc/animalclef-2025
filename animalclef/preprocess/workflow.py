@@ -61,7 +61,11 @@ def main(
     image_output_path = f"{output_path}/parquet/images"
     (
         images.withColumn("path", relative_path(F.col("path")))
-        .join(metadata.select("image_id", "path"), op="path", how="left")
+        .join(
+            metadata.select("image_id", "path", "dataset", "split"),
+            on="path",
+            how="left",
+        )
         .repartition(num_partitions, "dataset", "split")
         .write.partitionBy("dataset", "split")
         .parquet(image_output_path, mode="overwrite")
