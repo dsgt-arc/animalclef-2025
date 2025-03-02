@@ -35,6 +35,6 @@ fi
 
 # check for NO_REINSTALL flag
 if [[ -z ${NO_REINSTALL:-} ]]; then
-    uv pip install -e $MODULE_PATH
+    uv pip install -e "$MODULE_PATH[dev]"
 fi
 popd

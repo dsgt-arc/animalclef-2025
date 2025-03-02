@@ -8,18 +8,21 @@ from pyspark.sql import functions as F
 from .transform import WrappedDino
 from animalclef.spark import get_spark
 
+app = typer.Typer(name="embed", no_args_is_help=True)
+
 
 def transform(model, df, features) -> DataFrame:
-    transformed = model.transform(df)
-
+    """Transform the dataframe using the model."""
+    df = model.transform(df)
     for c in features:
         # check if the feature is a vector and convert it to an array
-        if "array" in transformed.schema[c].simpleString():
+        if "array" in df.schema[c].simpleString():
             continue
-        transformed = transformed.withColumn(c, vector_to_array(F.col(c)))
-    return transformed
+        df = df.withColumn(c, vector_to_array(F.col(c)))
+    return df
 
 
+@app.command("dinov2")
 def main(
     input_path: Annotated[str, typer.Argument(help="Input root directory")],
     output_path: Annotated[str, typer.Argument(help="Output root directory")],

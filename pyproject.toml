@@ -15,15 +15,21 @@ dependencies = [
     "pyspark >= 3.4.0",
     "pyarrow",
     "transformers",
+    "typer",
 ]
 
 [project.optional-dependencies]
 dev = [
+    "pip",
+    "uv",
     "jupyterlab",
     "ruff",
     "pre-commit",
     "pytest",
 ]
+
+[project.scripts]
+animalclef = "animalclef.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/dsgt-kaggle-clef/animalclef-2025"
