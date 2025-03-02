@@ -1,8 +1,6 @@
 import typer
 from typing_extensions import Annotated
 from pyspark.ml import Pipeline
-from pyspark.ml.functions import vector_to_array
-from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 
 from .transform import WrappedDino
@@ -11,19 +9,17 @@ from animalclef.spark import get_spark
 app = typer.Typer(name="embed", no_args_is_help=True)
 
 
-def transform(model, df, features) -> DataFrame:
-    """Transform the dataframe using the model."""
-    df = model.transform(df)
-    for c in features:
-        # check if the feature is a vector and convert it to an array
-        if "array" in df.schema[c].simpleString():
-            continue
-        df = df.withColumn(c, vector_to_array(F.col(c)))
-    return df
+# def features_to_array(df, features: list) -> DataFrame:
+#     for c in features:
+#         # check if the feature is a vector and convert it to an array
+#         if "array" in df.schema[c].simpleString():
+#             continue
+#         df = df.withColumn(c, vector_to_array(F.col(c)))
+#     return df
 
 
 @app.command("dinov2")
-def main(
+def embed_dinov2(
     input_path: Annotated[str, typer.Argument(help="Input root directory")],
     output_path: Annotated[str, typer.Argument(help="Output root directory")],
     batch_size: Annotated[int, typer.Option(help="Batch size")] = 32,
@@ -46,19 +42,20 @@ def main(
         output_path = f"{output_path}/sample_id={sample_id}"
 
     # transform the dataframe and write to disk
-    transformed = transform(
+    transformed = (
         Pipeline(
             stages=[
                 WrappedDino(
-                    input_col="data",
-                    output_col="cls_token",
+                    input_col="content",
+                    output_col="token",
                     batch_size=batch_size,
                 ),
             ]
-        ),
-        df,
-        "data",
-    ).select("image_id", "cls_token")
+        )
+        .fit(df)
+        .transform(df)
+        .select("image_id", "token")
+    )
 
     transformed.printSchema()
     transformed.explain()

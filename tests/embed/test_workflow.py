@@ -1,10 +1,14 @@
-from animalclef.embed.transform import WrappedDino
+from animalclef.embed.workflow import embed_dinov2
 import numpy as np
 
 
-def test_wrapped_dino(image_df):
-    wrapped_dino = WrappedDino(input_col="content", output_col="token", batch_size=1)
-    df = wrapped_dino.transform(image_df)
+def test_embed_dino_v2(spark, image_df_path, tmp_path):
+    embed_dinov2(
+        input_path=str(image_df_path),
+        output_path=str(tmp_path / "output"),
+        batch_size=1,
+    )
+    df = spark.read.parquet(str(tmp_path / "output"))
     df.printSchema()
     assert df.count() == 2
     assert df.select("image_id", "token.cls", "token.avg_patch").columns == [
