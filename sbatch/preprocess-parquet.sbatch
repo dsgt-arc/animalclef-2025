@@ -19,5 +19,5 @@ export PYSPARK_EXECUTOR_CORES=16
 export PYSPARK_DRIVER_MEMORY=60g
 export SPARK_LOCAL_DIR=$TMPDIR/spark-tmp
 scratch_dir=$(realpath ~/scratch/animalclef)
-project_data_dir=/storage/coda1/p-dsgt_clef2025/0/shared/animalclef
-animalclef preprocess parquet $scratch_dir $project_data_dir/data
+project_dir=/storage/coda1/p-dsgt_clef2025/0/shared/animalclef
+animalclef preprocess parquet $scratch_dir $project_dir/data

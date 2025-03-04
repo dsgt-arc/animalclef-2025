@@ -36,7 +36,7 @@ cmd = [
     "--ntasks=1",
     "--cpus-per-task=8",
     "--time=2:00:00",
-    "--qos=inferno",
+    f"--qos={args.qos}",
 ]
 if args.gpu:
     cmd += ["--gres=gpu:1", "-C=RTX6000"]
