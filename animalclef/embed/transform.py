@@ -61,12 +61,11 @@ class WrappedDino(Transformer, HasModelParamsMixin):
         def predict(inputs: np.ndarray) -> np.ndarray:
             # extract [CLS] token embeddings
             with torch.no_grad():
-                outputs = model(
-                    **processor(
-                        images=[deserialize_image(img) for img in inputs],
-                        return_tensors="pt",
-                    )
-                )
+                processed_inputs = processor(
+                    images=[deserialize_image(img) for img in inputs],
+                    return_tensors="pt",
+                ).to(model.device)
+                outputs = model(**processed_inputs)
                 features = outputs.last_hidden_state
                 cls_token = features[:, 0, :]
                 avg_patch_token = features[:, 1:, :].mean(dim=1)
