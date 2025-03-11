@@ -3,7 +3,6 @@
 #SBATCH --nodes=1 --gres=gpu:V100:1 --cpus-per-task=6 --mem-per-gpu=64G
 #SBATCH --time=2:00:00 --qos=embers
 #SBATCH --output=Report-%j.log --mail-type=END,FAIL --mail-user=acmiyaguchi@gatech.edu
-#SBATCH --array=0-0%5
 
 echo "Hostname: $(hostname)"
 echo "Number of CPUs: $(nproc)"
@@ -30,7 +29,7 @@ TEST_MODE=${TEST_MODE:-0}
 if [ $TEST_MODE -eq 1 ]; then
     output_dir=$scratch_dir/tmp/data/embeddings/dinov2/$SLURM_JOB_ID
 else
-    output_dir=$project_data/dir/data/embeddings/dinov2
+    output_dir=$project_dir/data/embeddings/dinov2
 fi
 
 export PYSPARK_EXECUTOR_CORES=6
@@ -38,9 +37,7 @@ export PYSPARK_DRIVER_MEMORY=60g
 export SPARK_LOCAL_DIR=$TMPDIR/spark-tmp
 animalclef embed dinov2 \
     $project_dir/data/parquet/images \
-    $output_dir \
-    --num-sample-ids 20 \
-    --sample-id $SLURM_ARRAY_TASK_ID
+    $output_dir
 
 kill $nvidia_logs_pid
 nvidia-logs parse $NVIDIA_LOG_FILE

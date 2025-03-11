@@ -9,23 +9,14 @@ from animalclef.spark import get_spark
 app = typer.Typer(name="embed", no_args_is_help=True)
 
 
-# def features_to_array(df, features: list) -> DataFrame:
-#     for c in features:
-#         # check if the feature is a vector and convert it to an array
-#         if "array" in df.schema[c].simpleString():
-#             continue
-#         df = df.withColumn(c, vector_to_array(F.col(c)))
-#     return df
-
-
 @app.command("dinov2")
 def embed_dinov2(
     input_path: Annotated[str, typer.Argument(help="Input root directory")],
     output_path: Annotated[str, typer.Argument(help="Output root directory")],
     batch_size: Annotated[int, typer.Option(help="Batch size")] = 32,
     sample_id: Annotated[int, typer.Option(help="Sample ID")] = None,
-    num_sample_ids: Annotated[int, typer.Option(help="Number of sample IDs")] = 50,
-    num_partitions: Annotated[int, typer.Option(help="Number of partitions")] = 20,
+    num_sample_ids: Annotated[int, typer.Option(help="Number of sample IDs")] = 10,
+    num_partitions: Annotated[int, typer.Option(help="Number of partitions")] = 5,
 ):
     df = get_spark().read.parquet(input_path)
 
