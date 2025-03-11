@@ -2,6 +2,11 @@ import pytest
 from animalclef.spark import spark_resource
 import imageio.v3 as iio
 from animalclef.serde import serialize_image
+import os
+
+
+os.environ["PYSPARK_DRIVER_CORES"] = "2"
+os.environ["PYSPARK_DRIVER_MEMORY"] = "4g"
 
 
 @pytest.fixture(scope="session")
