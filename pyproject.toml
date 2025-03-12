@@ -18,6 +18,10 @@ dependencies = [
     "torchvision",
     "transformers",
     "typer",
+    "numba",
+    "pacmap",
+    "umap-learn",
+    "faiss-cpu",
 ]
 
 [project.optional-dependencies]
