@@ -89,6 +89,8 @@ class AnimalImageDataset(Dataset):
             return placeholder, target
 
 
+# TODO: this should be a transform that takes a read image and converts it
+# to dino embeddings directly. take advantage of get_dino_processor_and_model
 class AnimalFeatureDataset(Dataset):
     """
     Dataset for pre-extracted animal image features.
@@ -104,6 +106,10 @@ class AnimalFeatureDataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx):
+        # TODO: use the animalclef.embed.transform.WrappedDino._make_predict_fn
+        # this should return a function that converts an image into a dictionary of results
+        # it might be useful to extract this functionality a bit so we don't have to
+        # instantiate the model
         return self.features[idx], self.labels[idx]
 
 
