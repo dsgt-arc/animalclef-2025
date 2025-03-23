@@ -11,16 +11,23 @@ Classes:
     AnimalDataModule: PyTorch Lightning DataModule for the AnimalCLEF dataset
 """
 
-import os
-import pandas as pd
-import torch
-from torch.utils.data import Dataset, DataLoader
-import pytorch_lightning as pl
-from typing import Dict, Optional
-from PIL import Image
-from transformers import AutoImageProcessor
-from sklearn.model_selection import train_test_split
 import logging
+import os
+from typing import Any, Dict, Optional
+
+import numpy as np
+import pandas as pd
+import pytorch_lightning as pl
+import torch
+import torch.nn as nn
+from torchvision.io import read_image
+
+from dataset import split_reid_data
+from embed.transform import get_dino_processor_and_model
+from PIL import Image
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, Dataset
+from transformers import AutoImageProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -51,66 +58,130 @@ class AnimalImageDataset(Dataset):
         self.classes = sorted(metadata[target_col].unique())
         self.class_to_idx = {c: i for i, c in enumerate(self.classes)}
 
-        # Create list of (image_id, class_idx) pairs
-        self.samples = [
-            (row[self.img_id_col], self.class_to_idx[row[self.target_col]])
-            for _, row in metadata.iterrows()
+    def __len__(self):
+        return len(self.metadata)
+
+    def __getitem__(self, idx):
+        row = self.metadata.iloc[idx]
+
+        img = row[self.img_id_col]
+        img_path = os.path.join(self.img_dir, f"{img}.jpg")
+
+        target = row[self.target_col]
+        target_int = self.class_to_idx[target]
+
+        X = read_image(img_path).float()
+        y = torch.tensor(target_int).float()
+
+        if self.transform:
+            X = self.transform(X)
+
+        return X, y, target
+
+
+class AnimalTripletImageDataset(AnimalImageDataset):
+    """
+    Dataset for animal image triplets with individual ID as target.
+
+    Loads images from disk and applies transformations as needed.
+    Provides error handling for missing or corrupted images.
+    """
+
+    def __init__(self, *args, **kwargs):
+        """
+        Initialize using inheritance.
+        """
+
+        super().__init__(*args, **kwargs)
+
+    def __getitem__(self, idx: int):
+        """
+        Returns a triplet with anchor at passed index.
+
+        Inputs:
+            idx: anchor index in the metadata.
+
+        Returns:
+            X_anchor, y_anchor, target_anchor: anchor image returns.
+            X_positive, y_positive, target_positive: positive image returns.
+            X_negative, y_negative, target_negative: negative image returns.
+        """
+
+        X_anchor, y_anchor, target_anchor = super().__getitem__(idx)
+
+        positive_tmp = self.metadata.loc[
+            (self.metadata[self.target_col] == target_anchor)
+            & (
+                self.metadata[self.img_id_col]
+                != self.metadata.iloc[idx][self.img_id_col]
+            )
+        ]
+        negative_tmp = self.metadata.loc[
+            (self.metadata[self.target_col] != target_anchor)
+            & (
+                self.metadata[self.img_id_col]
+                != self.metadata.iloc[idx][self.img_id_col]
+            )
         ]
 
-    def __len__(self):
-        return len(self.samples)
+        positive_idx = positive_tmp.sample(n=1, random_state=42).index.iloc[0]
+        negative_idx = negative_tmp.sample(n=1, random_state=42).index.iloc[0]
 
-    def __getitem__(self, idx):
-        img_id, target = self.samples[idx]
-        img_path = os.path.join(self.img_dir, f"{img_id}.jpg")
+        return (
+            (X_anchor, y_anchor, target_anchor),
+            super().__getitem__(positive_idx),
+            super().__getitem__(negative_idx),
+        )
 
-        try:
-            img = Image.open(img_path).convert("RGB")
 
-            if self.transform:
-                # Handle both callable transforms and processor objects with __call__ method
-                if hasattr(self.transform, "preprocess"):
-                    # For HF processors that use preprocess
-                    processed = self.transform.preprocess(img, return_tensors="pt")
-                    img = processed.pixel_values.squeeze(0)
-                else:
-                    # For standard transforms
-                    img = self.transform(img)
+class AnimalFeatureTransform(nn.Module):
+    """
+    Simple transformation that turns image Tensors into embeddign Tensors.
+    """
 
-            return img, target
+    def __init__(self, processor: Any, model: Any, embed_type: str = "cls"):
+        """
+        Inputs:
+            processor: output processor from embed.transform.get_dino_processor_and_model function.
+            model: output model from embed.transform.get_dino_processor_and_model function.
+            embed_type: string indicating the type of embedding to return (must be either 'cls' or 'avg_patch'; default = 'cls').
+        """
 
-        except Exception as e:
-            logger.error(f"Error loading image {img_path}: {e}")
-            # Return a placeholder black image
-            if self.transform:
-                placeholder = torch.zeros(3, 224, 224)
+        super().__init__()
+
+        assert embed_type in ["cls", "avg_patch"], (
+            f'Error: embed_type = "{embed_type}" is invalid!'
+        )
+
+        self.processor = processor
+        self.model = model
+        self.embed_type = embed_type
+
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
+        """
+        Mostly taken from embed/transform/WrappedDino._make_predict_fn.predict function implementation.
+
+        Inputs:
+            X: batch of images.
+
+        Returns:
+            features: batch of image embeddings.
+        """
+
+        with torch.no_grad():
+            processed_inputs = self.processor(
+                images=X,  # write a test for this
+                return_tensors="pt",
+            )
+            outputs = self.model(**processed_inputs)
+            features = outputs.last_hidden_state
+
+            if self.embed_type == "cls":
+                features = features[:, 0, :]
             else:
-                placeholder = Image.new("RGB", (224, 224), (0, 0, 0))
-            return placeholder, target
+                features = features[:, 1:, :].mean(dim=1)
 
-
-# TODO: this should be a transform that takes a read image and converts it
-# to dino embeddings directly. take advantage of get_dino_processor_and_model
-class AnimalFeatureDataset(Dataset):
-    """
-    Dataset for pre-extracted animal image features.
-
-    Used when working with pre-computed features instead of raw images.
-    """
-
-    def __init__(self, features: Dict[str, torch.Tensor], labels: torch.Tensor):
-        self.features = features
-        self.labels = labels
-
-    def __len__(self):
-        return len(self.labels)
-
-    def __getitem__(self, idx):
-        # TODO: use the animalclef.embed.transform.WrappedDino._make_predict_fn
-        # this should return a function that converts an image into a dictionary of results
-        # it might be useful to extract this functionality a bit so we don't have to
-        # instantiate the model
-        return self.features[idx], self.labels[idx]
+        return features
 
 
 class AnimalDataModule(pl.LightningDataModule):
@@ -132,8 +203,12 @@ class AnimalDataModule(pl.LightningDataModule):
         test_size: float = 0.1,
         seed: int = 42,
         extract_features: bool = True,
+        embed_type: str = 'cls'
     ):
         super().__init__()
+
+        assert embed_type in ['cls', 'avg_patch'], f'Error: embed_type = "{embed_type}" is invalid!'
+
         self.metadata_path = metadata_path
         self.img_dir = img_dir
         self.batch_size = batch_size
@@ -143,6 +218,7 @@ class AnimalDataModule(pl.LightningDataModule):
         self.test_size = test_size
         self.seed = seed
         self.extract_features = extract_features
+        self.embed_type = embed_type
 
         # Will be set during setup
         self.train_dataset = None
@@ -173,19 +249,21 @@ class AnimalDataModule(pl.LightningDataModule):
         metadata = pd.read_csv(self.metadata_path)
 
         # Split dataset
-        train_val_meta, test_meta = train_test_split(
-            metadata,
-            test_size=self.test_size,
-            stratify=metadata["individual_id"],
-            random_state=self.seed,
-        )
+        # train_val_meta, test_meta = train_test_split(
+        #     metadata,
+        #     test_size=self.test_size,
+        #     stratify=metadata["individual_id"],
+        #     random_state=self.seed,
+        # )
 
-        train_meta, val_meta = train_test_split(
-            train_val_meta,
-            test_size=self.val_size / (1 - self.test_size),
-            stratify=train_val_meta["individual_id"],
-            random_state=self.seed,
-        )
+        # train_meta, val_meta = train_test_split(
+        #     train_val_meta,
+        #     test_size=self.val_size / (1 - self.test_size),
+        #     stratify=train_val_meta["individual_id"],
+        #     random_state=self.seed,
+        # )
+
+        train_meta, val_meta, test_meta = split_reid_data(df=metadata)
 
         # Log split information
         logger.info(f"Train samples: {len(train_meta)}")
@@ -199,14 +277,19 @@ class AnimalDataModule(pl.LightningDataModule):
         logger.info(f"Number of individual classes: {self.num_classes}")
 
         # Set up processor for transforming images
-        self.feature_extractor = AutoImageProcessor.from_pretrained(self.model_name)
+        # self.feature_extractor = AutoImageProcessor.from_pretrained(self.model_name)
+        
+        self.processor, self.embedder = get_dino_processor_and_model(self.model_name)
+        self.transform = AnimalFeatureTransform(self.processor, self.embedder, embed_type=self.embed_type)
+
         kwargs = dict(
             img_dir=self.img_dir,
-            transform=self.feature_extractor,
+            transform=self.transform,
         )
-        self.train_dataset = AnimalImageDataset(metadata=train_meta, **kwargs)
-        self.val_dataset = AnimalImageDataset(metadata=val_meta, **kwargs)
-        self.test_dataset = AnimalImageDataset(metadata=test_meta, **kwargs)
+
+        self.train_dataset = AnimalTripletImageDataset(metadata=train_meta, **kwargs)
+        self.val_dataset = AnimalTripletImageDataset(metadata=val_meta, **kwargs)
+        self.test_dataset = AnimalTripletImageDataset(metadata=test_meta, **kwargs)
 
     def train_dataloader(self):
         return self._create_dataloader(self.train_dataset, shuffle=True)
