@@ -22,7 +22,7 @@ import torch
 import torch.nn as nn
 from torchvision.io import read_image
 
-from dataset import split_reid_data
+from animalclef.dataset import split_reid_data
 from embed.transform import get_dino_processor_and_model
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
