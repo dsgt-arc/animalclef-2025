@@ -13,7 +13,7 @@ Classes:
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -25,7 +25,6 @@ from torchvision.io import read_image
 from dataset import split_reid_data
 from embed.transform import get_dino_processor_and_model
 from PIL import Image
-from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoImageProcessor
 
@@ -203,11 +202,13 @@ class AnimalDataModule(pl.LightningDataModule):
         test_size: float = 0.1,
         seed: int = 42,
         extract_features: bool = True,
-        embed_type: str = 'cls'
+        embed_type: str = "cls",
     ):
         super().__init__()
 
-        assert embed_type in ['cls', 'avg_patch'], f'Error: embed_type = "{embed_type}" is invalid!'
+        assert embed_type in ["cls", "avg_patch"], (
+            f'Error: embed_type = "{embed_type}" is invalid!'
+        )
 
         self.metadata_path = metadata_path
         self.img_dir = img_dir
@@ -278,9 +279,11 @@ class AnimalDataModule(pl.LightningDataModule):
 
         # Set up processor for transforming images
         # self.feature_extractor = AutoImageProcessor.from_pretrained(self.model_name)
-        
+
         self.processor, self.embedder = get_dino_processor_and_model(self.model_name)
-        self.transform = AnimalFeatureTransform(self.processor, self.embedder, embed_type=self.embed_type)
+        self.transform = AnimalFeatureTransform(
+            self.processor, self.embedder, embed_type=self.embed_type
+        )
 
         kwargs = dict(
             img_dir=self.img_dir,
