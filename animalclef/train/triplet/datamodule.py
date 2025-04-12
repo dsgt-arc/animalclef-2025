@@ -18,7 +18,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 
 from animalclef.dataset import split_reid_data
-from embed.transform import get_dino_processor_and_model
+from animalclef.embed.transform import get_dino_processor_and_model
 
 logger = logging.getLogger(__name__)
 

@@ -17,15 +17,15 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from animalclef.dataset import split_reid_data
-from triplet import SimpleEmbedder
-from embed.transform import get_dino_processor_and_model
+from .embedder import SimpleEmbedder
+from animalclef.embed.transform import get_dino_processor_and_model
 
 logger = logging.getLogger(__name__)
 
 
 class TripletLoss(nn.Module):
     """
-    Triplet loss with hard mining within batches.
+    Triplet loss with random triplet selection.
     
     Computes loss based on the distances between anchor-positive and 
     anchor-negative pairs, applying a margin to ensure separation.
@@ -43,7 +43,7 @@ class TripletLoss(nn.Module):
         
     def forward(self, embeddings: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
-        Compute triplet loss with online hard triplet mining.
+        Compute triplet loss using random triplet selection.
         
         Args:
             embeddings: Tensor of shape (batch_size, embedding_dim)
@@ -55,12 +55,12 @@ class TripletLoss(nn.Module):
         # Compute pairwise distances between all embeddings
         dist_matrix = self._pairwise_distances(embeddings)
         
-        # For each anchor, find the hardest positive and negative
-        hardest_positive_dist = self._get_hardest_positive_dist(dist_matrix, labels)
-        hardest_negative_dist = self._get_hardest_negative_dist(dist_matrix, labels)
+        # Get random positive and negative pairs for each anchor
+        positive_dist = self._get_random_positive_dist(dist_matrix, labels)
+        negative_dist = self._get_random_negative_dist(dist_matrix, labels)
         
         # Calculate triplet loss with margin
-        triplet_loss = F.relu(hardest_positive_dist - hardest_negative_dist + self.margin)
+        triplet_loss = F.relu(positive_dist - negative_dist + self.margin)
         
         # Count number of valid triplets (those with positive loss)
         valid_triplets = torch.sum(triplet_loss > 1e-16).item()
@@ -82,89 +82,68 @@ class TripletLoss(nn.Module):
         Returns:
             Matrix of pairwise squared Euclidean distances
         """
-        # Get squared L2 norm for each embedding
         dot_product = torch.matmul(embeddings, embeddings.t())
         square_norm = torch.diag(dot_product)
-        
-        # Calculate pairwise distance matrix
-        # ||a - b||^2 = ||a||^2 + ||b||^2 - 2 * <a, b>
         distances = square_norm.unsqueeze(0) + square_norm.unsqueeze(1) - 2.0 * dot_product
-        
-        # Replace negative distances (due to floating point errors) with 0
         distances = F.relu(distances)
-        
         return distances
     
-    def _get_hardest_positive_dist(self, dist_matrix: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def _get_random_positive_dist(self, dist_matrix: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
-        For each anchor, find the farthest positive example.
+        For each anchor, randomly select a positive example.
         
         Args:
             dist_matrix: Pairwise distance matrix
             labels: Tensor of shape (batch_size) containing label indices
             
         Returns:
-            Tensor of hardest positive distances for each anchor
+            Tensor of random positive distances for each anchor
         """
         batch_size = dist_matrix.size(0)
         
         # Create a 2D mask for positive pairs (same label)
         mask_positives = labels.expand(batch_size, batch_size).eq(labels.expand(batch_size, batch_size).t())
-        
-        # Exclude diagonals (self-comparisons)
         mask_positives.fill_diagonal_(False)
         
-        # Replace non-positive distances with -inf to exclude them from max
-        positive_dists = dist_matrix.masked_fill(~mask_positives, float('-inf'))
+        # For each anchor, get indices of all valid positives
+        positive_indices = [torch.where(mask_positives[i])[0] for i in range(batch_size)]
         
-        # Get hardest positive (max distance) for each anchor
-        hardest_positive_dist, _ = positive_dists.max(dim=1)
-        
-        # Handle anchors with no positives in the batch
-        mask_anchors_with_positives = (hardest_positive_dist > float('-inf'))
-        if torch.sum(mask_anchors_with_positives) == 0:
-            # If no anchors have positives, return zero tensor
-            return torch.zeros_like(hardest_positive_dist)
-        
-        # Replace -inf values with 0
-        hardest_positive_dist = hardest_positive_dist.masked_fill(
-            hardest_positive_dist == float('-inf'), 0.0)
-        
-        return hardest_positive_dist
+        # Randomly select one positive for each anchor that has positives
+        random_positive_dist = torch.zeros(batch_size, device=dist_matrix.device)
+        for i, pos_indices in enumerate(positive_indices):
+            if len(pos_indices) > 0:
+                random_idx = torch.randint(0, len(pos_indices), (1,))
+                random_positive_dist[i] = dist_matrix[i, pos_indices[random_idx]]
+                
+        return random_positive_dist
     
-    def _get_hardest_negative_dist(self, dist_matrix: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def _get_random_negative_dist(self, dist_matrix: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
-        For each anchor, find the closest negative example.
+        For each anchor, randomly select a negative example.
         
         Args:
             dist_matrix: Pairwise distance matrix
             labels: Tensor of shape (batch_size) containing label indices
             
         Returns:
-            Tensor of hardest negative distances for each anchor
+            Tensor of random negative distances for each anchor
         """
         batch_size = dist_matrix.size(0)
         
         # Create a 2D mask for negative pairs (different label)
         mask_negatives = ~labels.expand(batch_size, batch_size).eq(labels.expand(batch_size, batch_size).t())
         
-        # Replace non-negative distances with inf to exclude them from min
-        negative_dists = dist_matrix.masked_fill(~mask_negatives, float('inf'))
+        # For each anchor, get indices of all valid negatives
+        negative_indices = [torch.where(mask_negatives[i])[0] for i in range(batch_size)]
         
-        # Get hardest negative (min distance) for each anchor
-        hardest_negative_dist, _ = negative_dists.min(dim=1)
-        
-        # Handle anchors with no negatives in the batch
-        mask_anchors_with_negatives = (hardest_negative_dist < float('inf'))
-        if torch.sum(mask_anchors_with_negatives) == 0:
-            # If no anchors have negatives, return zero tensor
-            return torch.zeros_like(hardest_negative_dist)
-        
-        # Replace inf values with 0
-        hardest_negative_dist = hardest_negative_dist.masked_fill(
-            hardest_negative_dist == float('inf'), 0.0)
-        
-        return hardest_negative_dist
+        # Randomly select one negative for each anchor that has negatives
+        random_negative_dist = torch.zeros(batch_size, device=dist_matrix.device)
+        for i, neg_indices in enumerate(negative_indices):
+            if len(neg_indices) > 0:
+                random_idx = torch.randint(0, len(neg_indices), (1,))
+                random_negative_dist[i] = dist_matrix[i, neg_indices[random_idx]]
+                
+        return random_negative_dist
 
 
 class TripletLearningModule(pl.LightningModule):

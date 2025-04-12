@@ -15,8 +15,8 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 
-from modified_datamodule import AnimalTripletDataModule
-from triplet_learning_module import TripletLearningModule
+from .datamodule import AnimalTripletDataModule
+from .learning import TripletLearningModule
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
