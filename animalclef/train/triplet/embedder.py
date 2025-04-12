@@ -23,6 +23,8 @@ class SimpleEmbedder(nn.Module):
             in_dim: input embedding dimension.
             out_dim: output embedding dimension.
         '''
+        
+        super().__init__()
 
         self.__version__ = '0.1.0'
 
