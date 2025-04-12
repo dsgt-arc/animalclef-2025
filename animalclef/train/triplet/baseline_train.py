@@ -15,6 +15,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 
+import torch.multiprocessing as mp
 from .datamodule import AnimalTripletDataModule
 from .learning import TripletLearningModule
 
@@ -124,4 +125,8 @@ def main():
 
 
 if __name__ == '__main__':
+    # setup basic logging
+    mp.set_start_method('spawn')
+    
+    logging.basicConfig(level=logging.INFO)
     main()

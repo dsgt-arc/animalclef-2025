@@ -8,7 +8,7 @@ Generated with Claude Sonnet 3.7
 """
 
 import logging
-import os
+import os, sys
 from typing import Any, Optional, Tuple
 
 import pandas as pd
@@ -37,7 +37,7 @@ class AnimalEmbeddingDataset(Dataset):
         processor: Any,
         model: Any,
         embed_type: str = "cls",
-        target_col: str = "individual_id",
+        target_col: str = "identity",
         img_id_col: str = "image_id",
     ):
         """
@@ -62,7 +62,7 @@ class AnimalEmbeddingDataset(Dataset):
         self.device = next(model.parameters()).device
 
         # Create mapping from individual ID to integer class
-        self.classes = sorted(metadata[target_col].unique())
+        self.classes = sorted(metadata[target_col].astype(str).unique().tolist())
         self.class_to_idx = {c: i for i, c in enumerate(self.classes)}
 
     def __len__(self):
@@ -81,7 +81,7 @@ class AnimalEmbeddingDataset(Dataset):
         row = self.metadata.iloc[idx]
         
         img_id = row[self.img_id_col]
-        img_path = os.path.join(self.img_dir, f"{img_id}.jpg")
+        img_path = os.path.join(self.img_dir, row['path'])
         
         # Load and process the image
         try:
@@ -272,15 +272,19 @@ class AnimalTripletDataModule(pl.LightningDataModule):
         metadata = pd.read_csv(self.metadata_path)
         
         # Split dataset
-        train_meta, val_meta, test_meta = split_reid_data(df=metadata)
-        
+        try:
+            train_meta, val_meta, test_meta = split_reid_data(df=metadata)
+        except ValueError:
+            print(f'ValueError! metadata shape: {metadata.shape}')
+            sys.exit(1)
+
         # Log split information
         logger.info(f"Train samples: {len(train_meta)}")
         logger.info(f"Val samples: {len(val_meta)}")
         logger.info(f"Test samples: {len(test_meta)}")
         
         # Get class information
-        all_classes = sorted(metadata["individual_id"].unique())
+        all_classes = sorted(metadata["identity"].astype(str).unique().tolist())
         self.num_classes = len(all_classes)
         self.class_names = all_classes
         logger.info(f"Number of individual classes: {self.num_classes}")
@@ -327,11 +331,16 @@ class AnimalTripletDataModule(pl.LightningDataModule):
         Returns:
             DataLoader instance for validation
         """
+        sampler = TripletBatchSampler(
+            dataset=self.val_dataset,
+            batch_size=self.batch_size,
+            drop_last=True,
+        )
+
         return DataLoader(
             self.val_dataset,
-            batch_size=self.batch_size,
+            batch_sampler=sampler,
             num_workers=self.num_workers,
-            shuffle=False,
             pin_memory=True,
         )
 
@@ -342,10 +351,15 @@ class AnimalTripletDataModule(pl.LightningDataModule):
         Returns:
             DataLoader instance for testing
         """
+        sampler = TripletBatchSampler(
+            dataset=self.test_dataset,
+            batch_size=self.batch_size,
+            drop_last=True,
+        )
+
         return DataLoader(
             self.test_dataset,
-            batch_size=self.batch_size,
+            batch_sampler=sampler,
             num_workers=self.num_workers,
-            shuffle=False,
             pin_memory=True,
         )

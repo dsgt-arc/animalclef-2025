@@ -7,7 +7,7 @@ using a frozen DINO backbone and a projector (SimpleEmbedder).
 Generated with Claude Sonnet 3.7
 """
 
-import logging
+import logging, sys
 from typing import Dict, List, Tuple, Union
 
 import pytorch_lightning as pl
@@ -198,18 +198,8 @@ class TripletLearningModule(pl.LightningModule):
             Projected embeddings
         """
         return self.projector(x)
-    
-    def training_step(self, batch: List[Tuple], batch_idx: int) -> Dict[str, torch.Tensor]:
-        """
-        Execute a training step on a batch of data.
-        
-        Args:
-            batch: Batch of data containing embeddings and labels
-            batch_idx: Index of the current batch
-            
-        Returns:
-            Dictionary with the training loss
-        """
+
+    def _step(self, batch: List[Tuple], batch_idx: int, prefix: str) -> Dict[str, torch.Tensor]:
         # Extract embeddings and labels from batch
         embeddings = []
         labels = []
@@ -237,9 +227,23 @@ class TripletLearningModule(pl.LightningModule):
         loss = self.triplet_loss(projected_embeddings, labels)
         
         # Log training loss
-        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log(f'{prefix}_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
         
-        return {'loss': loss}
+        return {f'{prefix}_loss': loss}
+    
+    def training_step(self, batch: List[Tuple], batch_idx: int) -> Dict[str, torch.Tensor]:
+        """
+        Execute a training step on a batch of data.
+        
+        Args:
+            batch: Batch of data containing embeddings and labels
+            batch_idx: Index of the current batch
+            
+        Returns:
+            Dictionary with the training loss
+        """
+        
+        return self._step(batch, batch_idx, prefix='train')
     
     def validation_step(self, batch: List[Tuple], batch_idx: int) -> Dict[str, torch.Tensor]:
         """
@@ -252,34 +256,8 @@ class TripletLearningModule(pl.LightningModule):
         Returns:
             Dictionary with the validation loss
         """
-        # Extract embeddings and labels from batch
-        embeddings = []
-        labels = []
         
-        # Process each sample in the batch
-        for sample in batch:
-            # Each sample is a triplet of (anchor, positive, negative)
-            anchor_embedding, anchor_label, _ = sample[0]
-            positive_embedding, positive_label, _ = sample[1]
-            negative_embedding, negative_label, _ = sample[2]
-            
-            embeddings.extend([anchor_embedding, positive_embedding, negative_embedding])
-            labels.extend([anchor_label, positive_label, negative_label])
-        
-        # Stack embeddings and labels
-        embeddings = torch.stack(embeddings)
-        labels = torch.stack(labels).squeeze()
-        
-        # Apply the projector to get final embeddings
-        projected_embeddings = self(embeddings)
-        
-        # Calculate triplet loss
-        loss = self.triplet_loss(projected_embeddings, labels)
-        
-        # Log validation loss
-        self.log('val_loss', loss, prog_bar=True)
-        
-        return {'val_loss': loss}
+        return self._step(batch, batch_idx, prefix='val')
     
     def test_step(self, batch: List[Tuple], batch_idx: int) -> Dict[str, torch.Tensor]:
         """
@@ -293,7 +271,7 @@ class TripletLearningModule(pl.LightningModule):
             Dictionary with the test loss
         """
         # Reuse validation step logic
-        return self.validation_step(batch, batch_idx)
+        return self._step(batch, batch_idx, prefix='test')
     
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """
