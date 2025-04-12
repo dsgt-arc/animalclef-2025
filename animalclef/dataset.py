@@ -6,6 +6,8 @@ The splitting strategy ensures:
 - Clear separation between training, validation, and test sets
 """
 
+import sys
+
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
@@ -56,10 +58,11 @@ def split_reid_data(
     train_images = []
     for indiv_id in sorted(train_ids):
         images = df[df[group_col] == indiv_id][image_col].tolist()
-        if len(images) > 1:  # Only split if more than 1 image
+        if len(images) > 2:  # Only split if more than 1 image
             known, unknown = train_test_split(
                 images, test_size=1 - known_ratio, random_state=seed + 2
             )
+                
             val_known, test_known = train_test_split(
                 unknown, test_size=0.5, random_state=seed + 3
             )
