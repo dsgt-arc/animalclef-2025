@@ -23,8 +23,8 @@ def get_spark(
     builder = (
         SparkSession.builder.config("spark.driver.memory", memory)
         .config("spark.driver.cores", cores)
-        .config("spark.sql.execution.arrow.pyspark.enabled", "true")
-        .config("spark.driver.maxResultSize", "8g")
+        .config("spark.sql.execution.arrow.pyspark.enabled", "false")
+        .config("spark.driver.maxResultSize", memory)
         .config("spark.local.dir", local_dir)
     )
     for k, v in kwargs.items():
