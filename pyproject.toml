@@ -24,6 +24,7 @@ dependencies = [
     "pacmap",
     "umap-learn",
     "faiss-cpu",
+    "luigi>=3.6.0",
 ]
 
 [project.optional-dependencies]
