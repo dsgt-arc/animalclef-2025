@@ -13,8 +13,8 @@ from sklearn.model_selection import train_test_split
 def split_reid_data(
     df: pd.DataFrame,
     train_ratio: float = 0.6,
-    val_ratio: float = 0.2,
-    known_ratio: float = 0.5,
+    val_ratio: float = 0.5,
+    known_ratio: float = 0.8,
     group_col: str = "identity",
     image_col: str = "image_id",
     seed: int = 42,
@@ -56,19 +56,28 @@ def split_reid_data(
     train_images = []
     for indiv_id in sorted(train_ids):
         images = df[df[group_col] == indiv_id][image_col].tolist()
-        if len(images) > 1:  # Only split if more than 1 image
-            known, unknown = train_test_split(
-                images, test_size=1 - known_ratio, random_state=seed + 2
+        if len(images) == 1:
+            # If a "known ID" has only one image, it must go to the training gallery.
+            # It cannot also be a query for itself if it's the only sample.
+            train_images.extend(images)
+        else:
+            # Split images for this known ID into gallery and a pool for queries
+            gallery_samples, query_samples_for_id = train_test_split(
+                images, train_size=known_ratio, random_state=seed + 2
             )
-            val_known, test_known = train_test_split(
-                unknown, test_size=0.5, random_state=seed + 3
-            )
+            train_images.extend(gallery_samples)
 
-            val_known_images.extend(val_known)
-            test_known_images.extend(test_known)
-            train_images.extend(known)
-        else:  # If only 1 image, put it in the validation set (or test, doesn't matter much)
-            val_known_images.extend(images)
+            if len(query_samples_for_id) == 1:
+                # If only one image is left for queries from this known ID,
+                # assign it all to validation_known_images (or test, or alternate).
+                val_known_images.extend(query_samples_for_id)
+            elif len(query_samples_for_id) > 1:
+                # If 2 or more images are left for queries, split them 50/50
+                val_k_queries, test_k_queries = train_test_split(
+                    query_samples_for_id, test_size=0.5, random_state=seed + 3
+                )
+                val_known_images.extend(val_k_queries)
+                test_known_images.extend(test_k_queries)
 
     # Create the known and unknown dfs
     val_df_known = df[df[image_col].isin(val_known_images)]

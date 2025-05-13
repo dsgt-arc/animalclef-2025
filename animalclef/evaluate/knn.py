@@ -12,7 +12,7 @@ from pyspark.sql import functions as F
 from tqdm import tqdm
 from typer import Typer
 
-from animalclef.dataset import split_reid_data
+from animalclef.dataset import split_reid_data, summarize_split
 from animalclef.metrics import BAKS, BAUS
 from animalclef.spark import get_spark
 
@@ -220,6 +220,8 @@ def run_prediction(
     # do the test split
     cond = (~pdf.identity.isnull()) & (pdf.identity_count > 2)
     train_df, val_df, test_df = split_reid_data(pdf[cond])
+    reid_split_summary = summarize_split(train_df, val_df, test_df)
+    reid_split_summary.to_csv(f"{output_path}/reid_split_summary.csv", index=False)
 
     # validation thresholds
     thresholds_df, distances = experiment_threshold(
@@ -232,6 +234,11 @@ def run_prediction(
     plot_threshold_score(thresholds_df, col="threshold")
     plt.savefig(f"{output_path}/val_thresholds.png")
     plt.close()
+    row = thresholds_df.iloc[thresholds_df["score"].idxmax()]
+    # write the best row to a json file
+    (output_path / "val_best_threshold.json").write_text(
+        json.dumps(row.to_dict(), indent=2)
+    )
 
     # test thresholds
     thresholds_df, distances = experiment_threshold(
@@ -248,7 +255,7 @@ def run_prediction(
     # make the prediction
     row = thresholds_df.iloc[thresholds_df["score"].idxmax()]
     # write the best row to a json file
-    (output_path / "best_threshold.json").write_text(
+    (output_path / "test_best_threshold.json").write_text(
         json.dumps(row.to_dict(), indent=2)
     )
     known_df = pdf[pdf.identity.notnull()]
