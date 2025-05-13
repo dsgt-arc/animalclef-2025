@@ -31,6 +31,10 @@ class EmbeddingTask(luigi.Task, SharedParamsMixin):
         default=128,
         description="Dimension of the embeddings.",
     )
+    projector = luigi.Parameter(
+        default="linear",
+        description="Type of projection head to use (linear or nonlinear).",
+    )
 
     def output(self):
         return {
@@ -46,6 +50,7 @@ class EmbeddingTask(luigi.Task, SharedParamsMixin):
             output_path=self.output_path,
             batch_size=self.batch_size,
             embed_dim=self.embed_dim,
+            projector=self.projector,
         )
 
 
@@ -86,11 +91,17 @@ class Workflow(luigi.Task):
             )
             output_path.mkdir(parents=True, exist_ok=True)
 
+            kwargs = (
+                dict(embed_dim=256, projector="nonlinear")
+                if "nonlinear" in model_path.as_posix()
+                else dict(embed_dim=128, projector="linear")
+            )
             task = EmbeddingTask(
                 metadata_path=metadata_path.as_posix(),
                 embedding_path=embedding_path.as_posix(),
                 projection_head_path=model_path.as_posix(),
                 output_path=output_path.as_posix(),
+                **kwargs,
             )
             tasks.append(task)
         yield tasks

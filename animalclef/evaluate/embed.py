@@ -41,6 +41,32 @@ class ProjectionHead(nn.Module):
         return z
 
 
+class NonlinearProjectionHead(nn.Module):
+    """
+    Simple projection head to transform embeddings.
+
+    Tried out nonlinearity (GELU) with more capacity (hidden_dim).
+    Normalization is useful because it links the cosine distance to
+    euclidean distance via inner product.
+    """
+
+    def __init__(self, input_dim, output_dim, hidden_dim=None):
+        super().__init__()
+        if hidden_dim is None:
+            hidden_dim = input_dim
+
+        self.projection = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, output_dim),
+        )
+
+    def forward(self, x):
+        z = self.projection(x)
+        z = F.normalize(z, p=2, dim=-1)
+        return z
+
+
 def plot_embeddings(embeddings, df, title="triplet embeddings"):
     X = np.stack(embeddings.embeddings)
     # 1D embedding to see how the embedding is reshaped
@@ -63,6 +89,7 @@ def get_embeddings(
     output_path: str,
     batch_size: int = 32,
     embed_dim: int = 128,
+    projector: str = "linear",
 ):
     embeddings = pd.read_parquet(embedding_path)
     merged_df = pd.merge(
@@ -71,7 +98,9 @@ def get_embeddings(
     dataset = EmbeddingDataset(merged_df)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    head = ProjectionHead(768, embed_dim).to(device)
+    head = {"linear": ProjectionHead, "nonlinear": NonlinearProjectionHead}[projector](
+        768, embed_dim
+    ).to(device)
     state_dict = torch.load(projection_head_path, map_location=device)
     head.load_state_dict(state_dict)
 
@@ -82,7 +111,7 @@ def get_embeddings(
     with torch.no_grad():
         for batch_image_ids, batch_embeddings in tqdm(dataloader):
             out = head(batch_embeddings).detach().cpu().numpy()
-            assert out.shape[1] == 128, out.shape
+            assert out.shape[1] == embed_dim, out.shape
             for image_id, embedding in zip(batch_image_ids, out):
                 res.append({"image_id": int(image_id), "embeddings": embedding})
 
