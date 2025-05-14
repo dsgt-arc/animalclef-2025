@@ -176,7 +176,7 @@ def experiment_threshold(train_df, val_df, num_neighbors=1):
     distances = get_avg_distance_to_neighbor(train_df, num_neighbors=num_neighbors)
     median = np.median(distances)
     mad = np.median(np.abs(distances - median))
-    thresholds = np.linspace(-2, 8, 100)
+    thresholds = np.linspace(-8, 8, 100)
     mad_threshold_df = search_threshold(
         train_df,
         val_df,
