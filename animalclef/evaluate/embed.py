@@ -22,7 +22,7 @@ class EmbeddingDataset(Dataset):
 
     def __getitem__(self, idx: int) -> tuple:
         row = self.metadata.iloc[idx]
-        return row.image_id, torch.from_numpy(row.embeddings).to(self.device)
+        return row.image_id, torch.from_numpy(row.embeddings).float().to(self.device)
 
 
 def plot_embeddings(embeddings, df, title="triplet embeddings"):
@@ -46,6 +46,7 @@ def get_embeddings(
     projection_head_path: str,
     output_path: str,
     batch_size: int = 32,
+    input_dim: int = 768,
     embed_dim: int = 128,
     projector: str = "linear",
 ):
@@ -58,7 +59,7 @@ def get_embeddings(
     device = "cuda" if torch.cuda.is_available() else "cpu"
     head = {"linear": LinearProjectionHead, "nonlinear": NonlinearProjectionHead}[
         projector
-    ](768, embed_dim).to(device)
+    ](input_dim, embed_dim).to(device)
     state_dict = torch.load(projection_head_path, map_location=device)
     head.load_state_dict(state_dict)
 
