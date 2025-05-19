@@ -1,13 +1,12 @@
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 import pacmap
 import matplotlib.pyplot as plt
 from pathlib import Path
+from .model import LinearProjectionHead, NonlinearProjectionHead
 from typer import Typer
 
 app = Typer()
@@ -23,48 +22,7 @@ class EmbeddingDataset(Dataset):
 
     def __getitem__(self, idx: int) -> tuple:
         row = self.metadata.iloc[idx]
-        return row.image_id, torch.from_numpy(row.embeddings).to(self.device)
-
-
-class ProjectionHead(nn.Module):
-    """
-    Simple projection head to transform embeddings.
-    """
-
-    def __init__(self, input_dim, output_dim):
-        super(ProjectionHead, self).__init__()
-        self.fc = nn.Linear(input_dim, output_dim)
-
-    def forward(self, x):
-        z = self.fc(x)
-        z = F.normalize(z, p=2, dim=-1)
-        return z
-
-
-class NonlinearProjectionHead(nn.Module):
-    """
-    Simple projection head to transform embeddings.
-
-    Tried out nonlinearity (GELU) with more capacity (hidden_dim).
-    Normalization is useful because it links the cosine distance to
-    euclidean distance via inner product.
-    """
-
-    def __init__(self, input_dim, output_dim, hidden_dim=None):
-        super().__init__()
-        if hidden_dim is None:
-            hidden_dim = input_dim
-
-        self.projection = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, output_dim),
-        )
-
-    def forward(self, x):
-        z = self.projection(x)
-        z = F.normalize(z, p=2, dim=-1)
-        return z
+        return row.image_id, torch.from_numpy(row.embeddings).float().to(self.device)
 
 
 def plot_embeddings(embeddings, df, title="triplet embeddings"):
@@ -88,6 +46,7 @@ def get_embeddings(
     projection_head_path: str,
     output_path: str,
     batch_size: int = 32,
+    input_dim: int = 768,
     embed_dim: int = 128,
     projector: str = "linear",
 ):
@@ -98,9 +57,9 @@ def get_embeddings(
     dataset = EmbeddingDataset(merged_df)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    head = {"linear": ProjectionHead, "nonlinear": NonlinearProjectionHead}[projector](
-        768, embed_dim
-    ).to(device)
+    head = {"linear": LinearProjectionHead, "nonlinear": NonlinearProjectionHead}[
+        projector
+    ](input_dim, embed_dim).to(device)
     state_dict = torch.load(projection_head_path, map_location=device)
     head.load_state_dict(state_dict)
 

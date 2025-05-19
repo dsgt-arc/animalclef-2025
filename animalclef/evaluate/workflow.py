@@ -27,6 +27,10 @@ class EmbeddingTask(luigi.Task, SharedParamsMixin):
         default=32,
         description="Batch size for loading the embeddings.",
     )
+    input_dim = luigi.IntParameter(
+        default=768,
+        description="Input dimension of the embeddings.",
+    )
     embed_dim = luigi.IntParameter(
         default=128,
         description="Dimension of the embeddings.",
@@ -49,6 +53,7 @@ class EmbeddingTask(luigi.Task, SharedParamsMixin):
             projection_head_path=self.projection_head_path,
             output_path=self.output_path,
             batch_size=self.batch_size,
+            input_dim=self.input_dim,
             embed_dim=self.embed_dim,
             projector=self.projector,
         )
@@ -76,7 +81,10 @@ class Workflow(luigi.Task):
     def run(self):
         root = Path("~/scratch/animalclef").expanduser()
         metadata_path = root / "raw/metadata.csv"
-        embedding_path = root / "processed/embeddings.parquet"
+        dino_embedding_path = root / "processed/embeddings.parquet"
+        megadescriptor_embedding_path = (
+            root / "processed/megadescriptor_embeddings.parquet"
+        )
 
         # let's project a bunch of data
         tasks = []
@@ -96,6 +104,15 @@ class Workflow(luigi.Task):
                 if "nonlinear" in model_path.as_posix()
                 else dict(embed_dim=128, projector="linear")
             )
+            if "megadescriptor" in model_path.as_posix():
+                embedding_path = megadescriptor_embedding_path
+                kwargs["input_dim"] = 1536
+                # oops turns out only dino nonlinear is 256
+                kwargs["embed_dim"] = 128
+            else:
+                embedding_path = dino_embedding_path
+                kwargs["input_dim"] = 768
+
             task = EmbeddingTask(
                 metadata_path=metadata_path.as_posix(),
                 embedding_path=embedding_path.as_posix(),
